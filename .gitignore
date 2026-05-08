@@ -1,5 +1,4 @@
 target/
 data/
-checkpoint.txt
-test.py
-payload.bin
+checkpoints/
+tests/
