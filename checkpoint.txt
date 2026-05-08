@@ -1,0 +1,1 @@
+Last edit was on crate::command, it's done, next step is applying it in crate::crypto

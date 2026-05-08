@@ -1,0 +1,27 @@
+[package]
+name = "felis"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "felis"
+path = "src/main.rs"
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+axum.workspace = true
+tower-http.workspace = true
+aes-gcm.workspace = true
+sha2.workspace = true
+rand.workspace = true
+anyhow.workspace = true
+log.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+
+# Database
+rusqlite.workspace = true
+clap = { version = "4.6.1", features = ["derive", "env"] }
+env_logger = "0.11"
