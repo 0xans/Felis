@@ -105,4 +105,11 @@ impl SessionManager {
         let sessions = self.sessions.read().await;
         sessions.values().cloned().collect()
     }
+
+    pub async fn remove(&self, id: &str) -> Result<(), anyhow::Error> {
+        let mut sessions = self.sessions.write().await;
+        sessions.remove(id);
+        // self.db.remove_session(id)?; // function is not implemented yet
+        Ok(())
+        }
 }

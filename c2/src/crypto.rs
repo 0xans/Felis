@@ -17,7 +17,7 @@ impl ServerCrypto {
         Self { cipher }
     }
 
-    pub fn ecrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
+    pub fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
         let bytes: [u8;12] = rand::random();
         let nonce = Nonce::from_slice(&bytes);
 
