@@ -87,7 +87,7 @@ impl SessionManager {
             };
 
             // Save to database
-            self.db.save(&session)?; // This function will return Result, do not forget to use "?"
+            self.db.save_session(&session)?; // This function will return Result, do not forget to use "?"
 
             sessions.insert(session.id.clone(), session.clone());
             session

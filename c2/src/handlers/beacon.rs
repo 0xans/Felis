@@ -82,11 +82,7 @@ pub async fn result(State(state): State<Arc<ServerState>>, body: Bytes) -> Resul
     };
 
     state.commands.result(&data.command_id, result.clone()).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    // state.commands.complete(result).await.map_err(|e| {
-    //     log::error!("Faild to complete command: {}", e);
-    //     StatusCode::INTERNAL_SERVER_ERROR
-    // })?;
+    // TODO: Add log command result to database
 
     Ok(StatusCode::OK)
 }
