@@ -1,11 +1,15 @@
 //! Command Handler
 //! Handle command managment API requests
 
+use crate::command::{Command, CommandStatus, CommandType};
 use crate::server::ServerState;
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use serde::Serialize;
 use std::sync::Arc;
-use crate::command::{CommandType, CommandStatus, Command};
 
 #[derive(Debug, Serialize)]
 pub struct CommandInfo {
@@ -16,21 +20,44 @@ pub struct CommandInfo {
     pub timeout: Option<u64>,
     pub status: String,
     pub created_at: i64,
-    pub result: Option<CommandResultInfo> 
+    pub result: Option<CommandResultInfo>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct CommandResultInfo {
     pub output: String,
-    pub success: bool, 
+    pub success: bool,
     pub duration_ms: u64,
-    pub data: Option<String>, 
+    pub data: Option<String>,
 }
 
-pub async fn list_commands(State(state): State<Arc<ServerState>>) -> Result<Json<Vec<CommandInfo>>, StatusCode> {
+pub async fn list_commands(
+    State(state): State<Arc<ServerState>>,
+) -> Result<Json<Vec<CommandInfo>>, StatusCode> {
     let commands = state.commands.all().await;
     let info: Vec<CommandInfo> = commands.into_iter().map(|c| c.into()).collect();
     Ok(Json(info))
+}
+
+pub async fn list_session_commands(
+    State(state): State<Arc<ServerState>>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<CommandInfo>>, StatusCode> {
+    if state.sessions.get(&id).await.is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let commands = state.commands.list_for_session(&id).await;
+    let info: Vec<CommandInfo> = commands.into_iter().map(|c| c.into()).collect();
+    Ok(Json(info))
+}
+
+pub async fn get_command(
+    State(state): State<Arc<ServerState>>,
+    Path(id): Path<String>,
+) -> Result<Json<CommandInfo>, StatusCode> {
+    let command = state.commands.get(&id).await.ok_or(StatusCode::NOT_FOUND)?;
+    Ok(Json(command.into()))
 }
 
 impl From<Command> for CommandInfo {
@@ -59,7 +86,8 @@ impl From<Command> for CommandInfo {
                 CommandType::RegWrite => "reg_write",
                 CommandType::Persist => "persist",
                 CommandType::Inject => "inject",
-            }.to_string(),
+            }
+            .to_string(),
             args: cmd.args,
             timeout: cmd.timeout,
             status: match cmd.status {
@@ -68,13 +96,14 @@ impl From<Command> for CommandInfo {
                 CommandStatus::Completed => "completed",
                 CommandStatus::Failed => "failed",
                 CommandStatus::Timeout => "timeout",
-            }.to_string(),
+            }
+            .to_string(),
             created_at: cmd.created_at,
-            result: cmd.result.map(|r| CommandResultInfo { 
-                output: r.output, 
-                success: r.success, 
-                duration_ms: r.duration_ms, 
-                data: r.data 
+            result: cmd.result.map(|r| CommandResultInfo {
+                output: r.output,
+                success: r.success,
+                duration_ms: r.duration_ms,
+                data: r.data,
             }),
         }
     }

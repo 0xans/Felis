@@ -2,12 +2,16 @@
 //! Handle session management API requests
 
 use crate::{
-    server::{Server, ServerState},
-    session::{BeaconData, Session, SessionStatus},
     command::CommandType,
+    server::ServerState,
+    session::{BeaconData, Session, SessionStatus},
 };
 
-use axum::{Json, extract::{State, Path}, http::StatusCode};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -24,41 +28,56 @@ pub struct SessionInfo {
     pub first_seen: i64,
     pub last_seen: i64,
     pub checkins: u64,
-    pub status: String
+    pub status: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CommandRequest {
     pub command_type: String,
     pub args: Vec<String>,
-    pub timeout: Option<u64>
+    pub timeout: Option<u64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize)]
 pub struct CommandResponse {
     pub id: String,
-    pub status: String
+    pub status: String,
 }
 
-
-pub async fn list_sessions(State(state): State<Arc<ServerState>>) -> Result<Json<Vec<SessionInfo>>, StatusCode> {
+pub async fn list_sessions(
+    State(state): State<Arc<ServerState>>,
+) -> Result<Json<Vec<SessionInfo>>, StatusCode> {
     let sessions: Vec<Session> = state.sessions.list().await;
     let info: Vec<SessionInfo> = sessions.into_iter().map(|s: Session| s.into()).collect();
     Ok(Json(info))
 }
 
-pub async fn get_session(State(state): State<Arc<ServerState>>, Path(id): Path<String>) -> Result<Json<SessionInfo>, StatusCode> {
+pub async fn get_session(
+    State(state): State<Arc<ServerState>>,
+    Path(id): Path<String>,
+) -> Result<Json<SessionInfo>, StatusCode> {
     let session: Session = state.sessions.get(&id).await.ok_or(StatusCode::NOT_FOUND)?;
     Ok(Json(session.into()))
 }
 
-pub async fn remove_session(State(state): State<Arc<ServerState>>, Path(id): Path<String>) -> Result<StatusCode, StatusCode> {
-    state.sessions.remove(&id).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+pub async fn remove_session(
+    State(state): State<Arc<ServerState>>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    state
+        .sessions
+        .remove(&id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     log::info!("Session {} removed", id);
     Ok(StatusCode::OK)
 }
 
-pub async fn send_command(State(state): State<Arc<ServerState>>, Path(id): Path<String>, Json(cmd): Json<CommandRequest>) -> Result<Json<CommandResponse>, StatusCode> {
+pub async fn send_command(
+    State(state): State<Arc<ServerState>>,
+    Path(id): Path<String>,
+    Json(cmd): Json<CommandRequest>,
+) -> Result<Json<CommandResponse>, StatusCode> {
     let session: Option<Session> = state.sessions.get(&id).await;
     if session.is_none() {
         return Err(StatusCode::NOT_FOUND);
@@ -85,12 +104,19 @@ pub async fn send_command(State(state): State<Arc<ServerState>>, Path(id): Path<
         "reg_write" => CommandType::RegWrite,
         "persist" => CommandType::Persist,
         "inject" => CommandType::Inject,
-        _ => return Err(StatusCode::BAD_REQUEST),    
+        _ => return Err(StatusCode::BAD_REQUEST),
     };
-    
-    let command = state.commands.queue(&id, command_type, cmd.args, cmd.timeout).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok(Json(CommandResponse { id: command.id, status: "queued".to_string() }))
+    let command = state
+        .commands
+        .queue(&id, command_type, cmd.args, cmd.timeout)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(CommandResponse {
+        id: command.id,
+        status: "queued".to_string(),
+    }))
 }
 
 #[cfg(debug_assertions)]

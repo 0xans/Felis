@@ -1,9 +1,9 @@
 //! Session Manager Module
 //! Track and manage connected session
 
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
 
 use crate::database::Database;
 
@@ -42,7 +42,7 @@ pub struct Session {
 pub enum SessionStatus {
     Active,
     Dead,
-    Stale
+    Stale,
 }
 
 #[derive(Clone)]
@@ -52,11 +52,17 @@ pub struct SessionManager {
 }
 
 impl SessionManager {
-    pub fn new(db: Database) -> Self {
-        Self {
-            sessions: Arc::new(RwLock::new(HashMap::new())),
-            db
-        }
+    pub fn new(db: Database) -> Result<Self, anyhow::Error> {
+        let sessions = db
+            .load_sessions()?
+            .into_iter()
+            .map(|session| (session.id.clone(), session))
+            .collect();
+
+        Ok(Self {
+            sessions: Arc::new(RwLock::new(sessions)),
+            db,
+        })
     }
 
     pub async fn register(&self, data: &BeaconData) -> Result<Session, anyhow::Error> {
@@ -86,12 +92,11 @@ impl SessionManager {
                 status: SessionStatus::Active,
             };
 
-            // Save to database
-            self.db.save_session(&session)?; // This function will return Result, do not forget to use "?"
-
             sessions.insert(session.id.clone(), session.clone());
             session
         };
+
+        self.db.save_session(&session)?;
 
         Ok(session)
     }
@@ -100,7 +105,7 @@ impl SessionManager {
         let sessions = self.sessions.read().await;
         sessions.get(id).cloned()
     }
-    
+
     pub async fn list(&self) -> Vec<Session> {
         let sessions = self.sessions.read().await;
         sessions.values().cloned().collect()
@@ -109,7 +114,7 @@ impl SessionManager {
     pub async fn remove(&self, id: &str) -> Result<(), anyhow::Error> {
         let mut sessions = self.sessions.write().await;
         sessions.remove(id);
-        // self.db.remove_session(id)?; // function is not implemented yet
+        self.db.remove_session(id)?;
         Ok(())
-        }
+    }
 }

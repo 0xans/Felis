@@ -24,7 +24,8 @@ struct Args {
     port: u16,
 
     /// Use HTTPS
-    #[arg(long, action = clap::ArgAction::Set, default_value_t = false)] // The default value is false for now. 
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = false)]
+    // The default value is false for now.
     https: bool,
 
     /// TLS certificate path
@@ -51,16 +52,19 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     log::info!("Starting server on {}:{}", args.listen, args.port);
+    if args.https {
+        log::warn!("HTTPS mode is not implemented yet; starting the HTTP listener");
+    }
 
     // Initialize database
     let db = database::Database::new(&args.database)?;
     db.initialize()?;
 
     // Create session manager
-    let session_mngr = session::SessionManager::new(db);
+    let session_mngr = session::SessionManager::new(db.clone())?;
 
     // Create command queue
-    let commandq = command::CommandQueue::new();
+    let commandq = command::CommandQueue::new(db)?;
 
     // Build server
     let server = server::Server::new(

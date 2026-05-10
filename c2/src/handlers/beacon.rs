@@ -1,11 +1,12 @@
-use axum::{body::Bytes, extract::State, http::{HeaderMap, StatusCode}};
-use clap::Command;
-use sha2::digest::Output;
-use std::sync::Arc;
-use serde::{Deserialize, Serialize};
+use crate::command::CommandType;
 use crate::{command::CommandResult, server::ServerState, session::BeaconData};
-use crate::command::{CommandQueue, CommandType};
-
+use axum::{
+    body::Bytes,
+    extract::State,
+    http::{HeaderMap, StatusCode},
+};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BeaconResponse {
@@ -21,7 +22,7 @@ pub struct CommandData {
     #[serde(rename = "type")]
     pub command_type: String,
     pub args: Vec<String>,
-    pub timeout: Option<u64>
+    pub timeout: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -32,13 +33,25 @@ struct ResultData {
     timestamp: i64,
 }
 
-pub async fn beacon(State(state): State<Arc<ServerState>>, _headers: HeaderMap, body: Bytes,) -> Result<Bytes, StatusCode> {
+pub async fn beacon(
+    State(state): State<Arc<ServerState>>,
+    _headers: HeaderMap,
+    body: Bytes,
+) -> Result<Bytes, StatusCode> {
+    let decrypted = state
+        .crypto
+        .decrypt(&body)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let decrypted = state.crypto.decrypt(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let data: BeaconData =
+        serde_json::from_slice(&decrypted).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let data: BeaconData = serde_json::from_slice(&decrypted).map_err(|_| StatusCode::BAD_REQUEST)?;
-
-    log::debug!("Beacon donnection received from session {} ({}@{})", data.session_id, data.username, data.hostname);
+    log::debug!(
+        "Beacon donnection received from session {} ({}@{})",
+        data.session_id,
+        data.username,
+        data.hostname
+    );
 
     // Register/update session
     let session: crate::session::Session = state.sessions.register(&data).await.map_err(|e| {
@@ -46,42 +59,72 @@ pub async fn beacon(State(state): State<Arc<ServerState>>, _headers: HeaderMap, 
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let commands = state.commands.pending(&session.id).await;
+    let commands = state.commands.pending(&session.id).await.map_err(|e| {
+        log::error!("Faild to load pending commands: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     // TODO: Add log beacon data and pending commands to database
-    log::debug!("Session {} has {} pending commands", session.id, commands.len());
+    log::debug!(
+        "Session {} has {} pending commands",
+        session.id,
+        commands.len()
+    );
 
     let response = BeaconResponse {
-        commands: commands.into_iter().map(|c| c.into()).collect(), interval: None, jitter: None, instruction: None};
-        let response = serde_json::to_vec(&response).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        let encrypted = state.crypto.encrypt(&response).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        commands: commands.into_iter().map(|c| c.into()).collect(),
+        interval: None,
+        jitter: None,
+        instruction: None,
+    };
+    let response = serde_json::to_vec(&response).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let encrypted = state
+        .crypto
+        .encrypt(&response)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Bytes::from(encrypted))
 }
 
-pub async fn result(State(state): State<Arc<ServerState>>, body: Bytes) -> Result<StatusCode, StatusCode> {
-    let decrypted = state.crypto.decrypt(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+pub async fn result(
+    State(state): State<Arc<ServerState>>,
+    body: Bytes,
+) -> Result<StatusCode, StatusCode> {
+    let decrypted = state
+        .crypto
+        .decrypt(&body)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let data: ResultData = serde_json::from_slice(&decrypted).map_err(|_| StatusCode::BAD_REQUEST)?;
-    log::debug!("Received result for command {} from session {}", data.command_id, data.id);
+    let data: ResultData =
+        serde_json::from_slice(&decrypted).map_err(|_| StatusCode::BAD_REQUEST)?;
+    log::debug!(
+        "Received result for command {} from session {} at {}",
+        data.command_id,
+        data.id,
+        data.timestamp
+    );
 
     let result = match &data.result {
         Ok(output) => CommandResult {
-            id: data.id.clone(),
+            id: data.command_id.clone(),
             output: output.clone(),
             success: true,
             duration_ms: 0,
             data: None,
         },
         Err(error) => CommandResult {
-            id: data.id.clone(),
+            id: data.command_id.clone(),
             output: error.clone(),
             success: false,
             duration_ms: 0,
             data: None,
-        }
+        },
     };
 
-    state.commands.result(&data.command_id, result.clone()).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    state
+        .commands
+        .result(&data.command_id, result.clone())
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     // TODO: Add log command result to database
 
     Ok(StatusCode::OK)
